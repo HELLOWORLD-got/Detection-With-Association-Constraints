@@ -1,0 +1,11 @@
+{
+  "unit_tests_passed": 12,
+  "old_checkpoint_metrics_and_losses_exactly_equal": true,
+  "old_checkpoint_resume": "passed: completed epoch 3",
+  "old_checkpoint_inference": "passed",
+  "new_training_entry": "passed: 2 real samples and validation",
+  "raw_and_processed_split_statistics_unchanged": true,
+  "oracle_MDA": 1.0,
+  "oracle_UCR": 1.0,
+  "oracle_official_MDA": 1.0
+}

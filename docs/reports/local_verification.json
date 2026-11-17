@@ -1,0 +1,87 @@
+{
+  "status": "local_pipeline_verified_not_paper_accuracy_reproduced",
+  "date": "2026-11-17",
+  "environment": {
+    "python": "3.13.9",
+    "torch": "2.12.0",
+    "torchvision": "0.27.0",
+    "scipy": "1.16.3",
+    "cuda_available": false
+  },
+  "dataset": {
+    "total_images": 39678,
+    "sequence_leakage": false,
+    "maximum_global_instances": 221,
+    "native_track_label_conflicts": 368,
+    "image_decode_check": "All JPEGs checked during prepare_mdmt --verify-images",
+    "split_samples": {
+      "train": 12026,
+      "val": 1930,
+      "test": 5883
+    },
+    "official_test_xml_comparison": {
+      "rows": 600923,
+      "missing_id_frame": 0,
+      "box_difference": 0
+    }
+  },
+  "checks": {
+    "unit_tests": 12,
+    "unit_tests_passed": true,
+    "real_resnet_full_resolution": {
+      "batch": 1,
+      "resolution": [
+        405,
+        720
+      ],
+      "queries": 256,
+      "parameters": 30023751,
+      "loss": 4.219974994659424,
+      "finite_gradients": true,
+      "seconds": 1.2764921251218766
+    },
+    "pretrained_vit": {
+      "input": [
+        1,
+        3,
+        49,
+        65
+      ],
+      "output": [
+        1,
+        32,
+        4,
+        5
+      ],
+      "pretrained_load": true
+    },
+    "epoch_resume_bitwise_equal": true,
+    "real_data_train_validation_test_and_official_eval": "passed on limited CPU samples",
+    "query_25_capacity": "covered by rejection tests; full train max=191 exceeds25",
+    "oracle_one_real_frame_per_test_sequence": {
+      "samples": 14,
+      "MDA": 1.0,
+      "UCR": 1.0,
+      "MDA_legacy_official": 1.0,
+      "COCO_mAP": 0.8712871287128713,
+      "note": "Ground-truth predictions; maxDets100 limits dense-scene AP. Not trained-model accuracy."
+    }
+  },
+  "pending": [
+    "A6000 CUDA and AMP execution",
+    "100-epoch training and validation selection",
+    "Final trained-model test metrics",
+    "Author clarification: 25 query capacity on dense MDMT; exact triplet attention and loss coefficients"
+  ],
+  "layout_refactor": {
+    "unit_tests_passed": 12,
+    "old_checkpoint_metrics_and_losses_exactly_equal": true,
+    "old_checkpoint_resume": "passed: completed epoch 3",
+    "old_checkpoint_inference": "passed",
+    "new_training_entry": "passed: 2 real samples and validation",
+    "raw_and_processed_split_statistics_unchanged": true,
+    "oracle_MDA": 1.0,
+    "oracle_UCR": 1.0,
+    "oracle_official_MDA": 1.0
+  }
+}

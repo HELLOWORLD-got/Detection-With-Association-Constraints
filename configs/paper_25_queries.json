@@ -1,0 +1,48 @@
+{
+  "data": {
+    "train": "data/processed/MDMT/train.jsonl",
+    "val": "data/processed/MDMT/val.jsonl",
+    "test": "data/processed/MDMT/test_official.jsonl",
+    "height": 405,
+    "width": 720,
+    "augment": true
+  },
+  "model": {
+    "backbone": "resnet50",
+    "pretrained": true,
+    "hidden_dim": 256,
+    "num_queries": 25,
+    "num_classes": 1,
+    "num_views": 2,
+    "num_layers": 3,
+    "pretrained_weights": "weights/resnet50-11ad3fa6.pth"
+  },
+  "training": {
+    "epochs": 100,
+    "batch_size": 4,
+    "accumulation_steps": 1,
+    "lr": 0.0001,
+    "weight_decay": 1e-05,
+    "workers": 4,
+    "amp": true,
+    "clip_grad_norm": 0.1,
+    "seed": 42,
+    "deterministic": false,
+    "freeze_bn_stats": true
+  },
+  "loss": {
+    "lambda_box": 1.0,
+    "lambda_reg": 1.0,
+    "lambda_conf": 1.0,
+    "lambda_l1": 1.0,
+    "lambda_giou": 1.0
+  },
+  "evaluation": {
+    "confidence_threshold": 0.5,
+    "association": {
+      "iou_threshold": 0.5,
+      "ucr_threshold": 0.6
+    },
+    "selection_metric": "MDA"
+  }
+}

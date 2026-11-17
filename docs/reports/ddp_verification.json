@@ -1,0 +1,23 @@
+{
+  "unit_tests_passed": 14,
+  "cpu_gloo_world_size": 2,
+  "ddp_train_validation_checkpoint": true,
+  "ddp_resume_bitwise_equal": true,
+  "per_rank_rng_state_count": 2,
+  "checkpoint_without_module_prefix": true,
+  "ddp_checkpoint_single_process_evaluation": true,
+  "legacy_single_process_resume_bitwise_equal": true,
+  "uneven_target_gradient_check": {
+    "global_batch_gradient_match": true,
+    "maximum_gradient_errors": {
+      "logits": 0.0,
+      "boxes": 0.0,
+      "visibility": 0.0
+    },
+    "test_case": "visible targets on rank0, empty target set on rank1"
+  },
+  "cuda_nccl_amp": "Not tested: no NVIDIA GPU on this computer",
+  "spawn_data_workers": true,
+  "uneven_dataset_padding_reported": true,
+  "partial_final_accumulation_group": true
+}

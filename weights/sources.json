@@ -1,0 +1,12 @@
+{
+  "resnet50": {
+    "url": "https://download.pytorch.org/models/resnet50-11ad3fa6.pth",
+    "sha256": "11ad3fa62ca79e40addfd354a8ec4b7c75143b3038b8d2a807fbc68deab379ca",
+    "size": 102540417
+  },
+  "vit_b16": {
+    "url": "https://download.pytorch.org/models/vit_b_16-c867db91.pth",
+    "sha256": "c867db91d3e12c6cbadabb610d73c24a546bf82d8c03a9fea34f43a712ddb0e9",
+    "size": 346328529
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "supplement_MIA.py": {
+    "url": "https://github.com/VisDrone/Multi-Drone-Multi-Object-Detection-and-Tracking/blob/main/demo/supplement_MIA.py",
+    "sha256": "e05653fdeb18bf413f3c26be9aa9b253315641faac4c48fb3e055a1d85deea36"
+  },
+  "common.py": {
+    "url": "https://github.com/VisDrone/Multi-Drone-Multi-Object-Detection-and-Tracking/blob/main/demo/utils/common.py",
+    "sha256": "c149190c4c00049e6c5af509372e31f4b1a13bdc83a1581d92e668bf672f8799"
+  },
+  "mango_eval_MDA_perImage.py": {
+    "url": "https://github.com/VisDrone/Multi-Drone-Multi-Object-Detection-and-Tracking/blob/main/demo/eval/mango_eval_MDA_perImage.py",
+    "sha256": "1887fb3c4ba023ad2535b2d2f4dc2b900d0d125b60e68bb7559b6f0d7bc38147"
+  },
+  "mango_eval.py": {
+    "url": "https://github.com/VisDrone/Multi-Drone-Multi-Object-Detection-and-Tracking/blob/main/demo/eval/mango_eval.py",
+    "sha256": "2b9f36a6951b0aad9b2e1e03f5d10273d8c6d99171b1895e8735ad48a69c5fcd"
+  }
+}
