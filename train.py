@@ -275,8 +275,8 @@ def run(args, config, device, rank, world_size):
                 )
             print(
                 f"Epoch {epoch+1}/{t['epochs']} done | train_loss={record['train_loss']:.5f} "
-                f"val_loss={result['losses']['loss']:.5f} | MDA={result['MDA']:.4f} "
-                f"mAP={result['mAP']:.4f} | best={best:.4f} "
+                f"val_loss={result['losses']['loss']:.5f} | MDA={result['MDA']:.6g} "
+                f"mAP={result['mAP']:.6g} | best={best:.6g} "
                 f"train={record['train_samples_per_second']:.2f} pairs/s "
                 f"time={record['elapsed_seconds']:.1f}s | saved last.pt"
                 + (", best.pt" if improved else ""),

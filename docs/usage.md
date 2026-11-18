@@ -271,6 +271,20 @@ torchrun --standalone --nproc-per-node=2 train.py \
 
 ### 本地验证范围
 
+若多轮MDA/mAP仍为0，先检查history.jsonl的完整数值与分项损失。训练摘要现使用6位有效数字，
+避免很小的非零指标被四位小数舍入成0。只读诊断命令：
+
+```bash
+CUDA_VISIBLE_DEVICES=1 python tools/diagnose.py \
+  --checkpoint runs/mdmt_resnet_batch32/last.pt --device cuda \
+  --limit 16 --output runs/mdmt_resnet_batch32/diagnosis.json
+```
+
+在train/val各取16个均匀分布样本，关闭增强、不更新权重；报告前景/可见性概率、
+AP候选数量、MDA过滤后框数、忽略分数的GT最大IoU、query间框坐标标准差和预测/GT宽高。
+IoU覆盖不考虑一对一匹配，仅用于定位，不能当作AP或MDA。诊断应优先用last.pt，
+若验证指标长期为0，best.pt可能仍是第一轮。运行前停止训练或选择空闲显卡，避免争抢资源。
+
 本地已用CPU/Gloo双进程检查：真实MDMT短训练、累积同步、验证、保存、恢复、
 多卡检查点单进程测试，以及不均匀可见目标数下的全局梯度一致性。
 本地没有NVIDIA CUDA/NCCL，因此服务器上仍应先执行上述多卡短检查。
