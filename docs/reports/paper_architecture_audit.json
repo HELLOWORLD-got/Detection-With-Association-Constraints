@@ -1,0 +1,47 @@
+{
+  "source": {
+    "repository": "https://github.com/yyyyyxq/Instance-based-Association",
+    "commit": "b221ecd29704617619b8896439369f453b6e33ae",
+    "source": "Original author commit already present in local Git history",
+    "files": "Unmodified bytes from model/",
+    "purpose": "Evidence for architecture audit; not a runnable training implementation"
+  },
+  "checks": {
+    "author_giq_position_encoding": {
+      "completed": false,
+      "error_type": "RuntimeError",
+      "error": "The size of tensor a (100) must match the size of tensor b (16) at non-singleton dimension 1"
+    },
+    "author_mvff_encoder_called_as_qkv": {
+      "completed": false,
+      "error_type": "AssertionError",
+      "error": "For batched (3-D) `query`, expected `key_padding_mask` to be `None` or 2-D but found 3-D tensor instead"
+    },
+    "author_mvff_reshape_after_skipping_attention": {
+      "completed": false,
+      "error_type": "RuntimeError",
+      "error": "shape '[1, 32, 2, 2]' is invalid for input of size 256"
+    },
+    "paper_eq11_standard_attention_shape_check": {
+      "completed": false,
+      "error_type": "AssertionError",
+      "error": "key shape torch.Size([1, 1, 32]) does not match value shape torch.Size([4, 1, 32])"
+    },
+    "author_mvoq_instance_order_counterexample": {
+      "completed": true,
+      "result": {
+        "max_slot_box_difference": 0.0,
+        "distinct_input_instances": true,
+        "setup": "N=2, H'W'=4; source repeat/reshape mixes instance order",
+        "note": "Counterexample in public code, not proof of the server model's root cause."
+      }
+    }
+  },
+  "unresolved": [
+    "Paper PDF p6: channel concat produces 256*K channels; SA hidden/output are 256, reduction is unspecified.",
+    "Paper PDF p7 Eq11: object query Q, single instance K, spatial view V; token alignment/projection is unspecified.",
+    "Paper N=25 versus complete MDMT union-instance maxima train191/val221/test201; selection/cropping protocol is unspecified.",
+    "Loss weights and several implementation/training choices are not supplied."
+  ],
+  "conclusion": "Exact reproduction is not established. Do not label an invented attention/reduction as the paper architecture."
+}

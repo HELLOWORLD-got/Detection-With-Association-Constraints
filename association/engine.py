@@ -51,6 +51,7 @@ def build_model(config, pretrained=None):
         num_classes=m["num_classes"],
         num_views=m["num_views"],
         num_layers=m["num_layers"],
+        mvoq_mode=m.get("mvoq_mode", "legacy"),
     )
     # Frozen BN statistics are stable for per-view single-GPU small batches.
     # This is an explicit training choice; affine parameters remain trainable.

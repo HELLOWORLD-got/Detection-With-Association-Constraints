@@ -307,11 +307,17 @@ def main():
     parser.add_argument("--limit-val", type=int)
     parser.add_argument("--max-train-batches", type=int, help="Maximum batches PER rank")
     parser.add_argument("--no-amp", action="store_true")
+    parser.add_argument(
+        "--mvoq-mode", choices=("legacy", "author", "triplet"),
+        help="Override the MVOQ variant (triplet uses instance-conditioned spatial keys)",
+    )
     parser.add_argument("--log-every", type=int, default=20, help="Plain log interval in batches (rank 0 only)")
     parser.add_argument("--progress", choices=("auto", "bar", "log"), default="auto",
                         help="auto: bar in terminal, plain logs when redirected; bar: force bar; log: plain logs")
     args = parser.parse_args()
     config = load_config(args.config)
+    if args.mvoq_mode is not None:
+        config["model"]["mvoq_mode"] = args.mvoq_mode
     for name in ("epochs", "batch_size", "accumulation_steps", "workers"):
         if getattr(args, name) is not None:
             config["training"][name] = getattr(args, name)

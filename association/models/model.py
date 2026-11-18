@@ -7,7 +7,8 @@ from .multi_view_object_query import MultiViewObjectQuery
 
 class InstanceBasedAssociation(nn.Module):
     def __init__(
-        self, backbone, hidden_dim=256, num_queries=25, num_classes=1, num_views=2, num_layers=3
+        self, backbone, hidden_dim=256, num_queries=25, num_classes=1, num_views=2, num_layers=3,
+        mvoq_mode="legacy",
     ):
         super().__init__()
         self.backbone = backbone
@@ -27,7 +28,7 @@ class InstanceBasedAssociation(nn.Module):
 
         # Multi-View Object Query Module
         self.mvoq = MultiViewObjectQuery(
-            hidden_dim=hidden_dim, num_queries=num_queries, num_views=num_views
+            hidden_dim=hidden_dim, num_queries=num_queries, num_views=num_views, mode=mvoq_mode
         )
 
     def forward(self, images, return_logits=False):

@@ -27,6 +27,8 @@
 
 `tools/check.py` 是环境和数据检查，增加 `--oracle` 可检查评估器；
 `tools/prepare_weights.py` 准备官方权重；`tools/score_official_mda.py` 跑原版 MDA。
+`tools/audit_paper.py` 核对保留的原作者模型代码；`tools/overfit.py` 仅作学习能力诊断。
+原作者源码固定于 `reference/author_model/`，与 `association/models/` 的可运行重建实现明确区分。
 数据准备各阶段合在 `tools/prepare_data.py`，通过根目录的 `prepare.py` 调用。
 旧 HF 镜像下载程序放到 `tools/legacy/`，正常复现不需要打开。
 `reference/` 是核对论文和数据协议时保存的官方代码，不修改它来实现训练功能。

@@ -1,5 +1,8 @@
 # 论文方法与实现对应
 
+**状态：严格复现尚未完成。** 最新逐式核对、作者源码的可执行错误证明和待澄清项见
+[架构核对报告](paper_architecture_audit.md)。此前spatial_v2实验已撤回，不能作为论文架构。
+
 依据：用户提供的 TGRS 2026 PDF（DOI 10.1109/TGRS.2026.3724951），
 作者仓库 https://github.com/yyyyyxq/Instance-based-Association，
 MDMT 官方 https://github.com/VisDrone/Multi-Drone-Multi-Object-Detection-and-Tracking。
@@ -15,7 +18,7 @@ MDMT 原版评估脚本保存在 reference/mdmt_official，作为对照而非本
 | CA (Eq.6) | association/models/multi_view_feature_fusion.py | 3层，8 heads，跨视角 Q/其他视角 KV，残差+post-LN+FFN；不再错误调用 EncoderLayer(Q,K,V) |
 | Concat+SA (Eqs.7–8) | 同上 | 按通道拼接后1×1降至256再3层SA；论文未明确降维算子 |
 | GIQ (Eqs.9–10) | association/models/global_instance_query.py | 学习查询、分离x/y的2D sine/cos编码、全局分类；保留公开模型 API |
-| MVOQ (Eqs.11–13) | association/models/multi_view_object_query.py | 每视角/每实例学习query，加绑定的全局实例特征，再对本视角空间token做cross attention |
+| MVOQ (Eqs.11–13) | association/models/multi_view_object_query.py | 默认条件查询使用 object query + 全局实例作为 Q；`--mvoq-mode author` 复现公开源码的 Q/K/V 角色并修正实例顺序 |
 | Hungarian (Eqs.20–25) | association/losses.py | N×N含背景匹配；可见框L1+GIoU；分类和逐视角可见性损失；空实例/空视角掩码 |
 | 训练协议 | train.py + association/engine.py | AdamW 1e-4 / wd 1e-5 / batch4 / 100epoch，训练集增强、验证选优、AMP及epoch边界恢复 |
 | MDA | association/metrics.py + tools/score_official_mda.py | 明确的一对一版本和未改匹配逻辑的官方旧版并列 |
@@ -24,7 +27,18 @@ MDMT 原版评估脚本保存在 reference/mdmt_official，作为对照而非本
 
 论文 Eq.11 称 object query 为 Q、单实例为 K、图像特征为 V，
 却没有定义不同 token 数的 K/V 如何构成标准注意力，也没有给出可执行的三元算子。
-本实现采用条件查询，是合理的可计算重建；不能冒充已确认的作者原算子。
+公开源码使用全局实例作为 Q、视角空间特征作为 K/V，没有独立 object query。源码路径用于对照。
+默认条件查询保留独立 object query，它也是对式(11)的重建选择。
+
+`--mvoq-mode triplet` 提供一个保留三路输入的可检验实现。对每个实例槽 \(i\)、视角 \(k\)
+和空间位置 \(s\)，令 `Q[k,i] = Wq(object_query[k,i])`，
+`K[k,i,s] = Wk(view[k,s]) * (1 + tanh(Wg(instance[i])))`，
+`V[k,s] = Wv(view[k,s])`，其中 `*` 表示逐通道乘法。
+实例调制空间键，各位置仍有不同的键，因此目标查询可以按空间位置选择值。
+代码将调制项乘到 Q 的投影上，这与显式构造每个实例的 K 在点积中等价。
+这是补全式(11)的实验假设，精度需通过同一 MDMT 验证集与 `author` 和 `legacy` 对照。
+比较时固定 MVFF 的 1×1 投影、256 个查询和全局 batch 4。使用独立运行目录，
+各版本都从同一 ImageNet 骨干初始化，只有同一版本的检查点可续训。
 损失 lambda_box/reg/conf/L1/GIoU 目前均为1，论文没有公布数值，配置可修改。
 实际训练应只用验证集选这些参数，并保存配置，不用测试集调参。
 

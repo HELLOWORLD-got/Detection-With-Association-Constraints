@@ -1,0 +1,143 @@
+{
+  "observed_remote_epoch": 16,
+  "observed_remote_diagnostic": {
+    "train_raw_iou_coverage": 0.04929971988795518,
+    "val_raw_iou_coverage": 0.0036976170912078883,
+    "train_class_loss": 0.014880923350574449,
+    "val_class_loss": 2.1599897156702355
+  },
+  "candidate": "spatial_v2",
+  "full_resnet50_real_pair_forward_backward_finite": true,
+  "unit_tests_passed": 16,
+  "limitations": [
+    "No remote epoch-16 weights available locally.",
+    "No full-dataset convergence/generalization validation.",
+    "Single-pair CPU experiment uses debug architecture, random frozen backbone, no augmentation, FP32, lr=3e-4; not equivalent to full server config.",
+    "Architectural changes are reconstruction experiments, not author-confirmed implementation."
+  ],
+  "legacy_1000": {
+    "settings": {
+      "config": "configs/debug_cpu.json",
+      "device": "cpu",
+      "index": 334,
+      "steps": 1000,
+      "lr": 0.0003,
+      "head_version": "legacy",
+      "freeze_backbone": true,
+      "output": "runs/legacy_overfit_local"
+    },
+    "instances": 8,
+    "final": {
+      "step": 1000,
+      "MDA": 0.17647058823529413,
+      "MDA_frame_mean": 0.17647058823529413,
+      "UCR": 0.375,
+      "association_precision": 0.42857142857142855,
+      "association_recall": 0.375,
+      "association_f1": 0.39999999999999997,
+      "true_associations": 3,
+      "predicted_associations": 7,
+      "ground_truth_associations": 8,
+      "correct_instances": 3,
+      "total_instances": 8,
+      "frames": 1,
+      "MDA_per_sequence": {
+        "23": 0.17647058823529413
+      },
+      "mAP": 0.11532153215321533,
+      "AP50": 0.20330033003300332,
+      "AP75": 0.1056105610561056,
+      "losses": {
+        "loss": 0.8393583297729492,
+        "classification": 0.005937075708061457,
+        "regression": 0.8150904178619385,
+        "confidence": 0.018330799415707588
+      },
+      "samples": 1
+    }
+  },
+  "spatial_1000": {
+    "settings": {
+      "config": "configs/debug_cpu.json",
+      "device": "cpu",
+      "index": 334,
+      "steps": 1000,
+      "lr": 0.0003,
+      "head_version": "spatial_v2",
+      "freeze_backbone": true,
+      "output": "runs/spatial_overfit_local"
+    },
+    "instances": 8,
+    "final": {
+      "step": 1000,
+      "MDA": 0.045454545454545456,
+      "MDA_frame_mean": 0.045454545454545456,
+      "UCR": 0.125,
+      "association_precision": 0.125,
+      "association_recall": 0.125,
+      "association_f1": 0.125,
+      "true_associations": 1,
+      "predicted_associations": 8,
+      "ground_truth_associations": 8,
+      "correct_instances": 1,
+      "total_instances": 8,
+      "frames": 1,
+      "MDA_per_sequence": {
+        "23": 0.045454545454545456
+      },
+      "mAP": 0.18607560756075606,
+      "AP50": 0.29450945094509445,
+      "AP75": 0.25358535853585357,
+      "losses": {
+        "loss": 0.9537783265113831,
+        "classification": 0.00604493822902441,
+        "regression": 0.9462095499038696,
+        "confidence": 0.0015238681808114052
+      },
+      "samples": 1
+    }
+  },
+  "spatial_3000": {
+    "settings": {
+      "config": "configs/debug_cpu.json",
+      "device": "cpu",
+      "index": 334,
+      "steps": 3000,
+      "lr": 0.0003,
+      "head_version": "spatial_v2",
+      "freeze_backbone": true,
+      "output": "runs/spatial_overfit_3000"
+    },
+    "instances": 8,
+    "final": {
+      "step": 3000,
+      "MDA": 0.5,
+      "MDA_frame_mean": 0.5,
+      "UCR": 0.75,
+      "association_precision": 0.75,
+      "association_recall": 0.75,
+      "association_f1": 0.75,
+      "true_associations": 6,
+      "predicted_associations": 8,
+      "ground_truth_associations": 8,
+      "correct_instances": 6,
+      "total_instances": 8,
+      "frames": 1,
+      "MDA_per_sequence": {
+        "23": 0.5
+      },
+      "mAP": 0.5768236823682369,
+      "AP50": 0.7566556655665568,
+      "AP75": 0.7566556655665568,
+      "losses": {
+        "loss": 0.40935906767845154,
+        "classification": 0.0010128904832527041,
+        "regression": 0.40825486183166504,
+        "confidence": 9.130614489549771e-05
+      },
+      "samples": 1
+    }
+  },
+  "status": "withdrawn_non_paper_experiment",
+  "note": "Archived diagnostic evidence only. spatial_v2 code/config have been removed at the user request to follow the paper."
+}

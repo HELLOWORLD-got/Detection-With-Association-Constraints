@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/yyyyyxq/Instance-based-Association",
+  "commit": "b221ecd29704617619b8896439369f453b6e33ae",
+  "source": "Original author commit already present in local Git history",
+  "files": "Unmodified bytes from model/",
+  "purpose": "Evidence for architecture audit; not a runnable training implementation"
+}
