@@ -234,13 +234,40 @@ DistributedSampler按rank分片，每轮set_epoch重新洗牌；样本总数不�
 检查点记录各rank随机状态，同卡数在epoch边界恢复；改变卡数可以加载权重/优化器，
 但会提示随机流重启，不承诺精确续训。CUDA/CPU、不同环境以及worker设置变化也不保证逐位一致。
 
-### 本地验证范围
+### 进度条和 batch 容量测试
 
-训练默认每个batch打印进度（仅rank0）：当前轮次、已完成batch、百分比、当前及累计本rank损失、耗时和ETA。
-CUDA训练还显示rank0的PyTorch已分配/保留显存；这与nvidia-smi的进程总显存口径不同。
-`--log-every 20` 可降低打印频率，首尾batch仍打印；验证也使用此间隔。
-完整一轮的全局训练损失仍以history.jsonl为准。启动时各rank会打印数据加载、模型搬入设备、
-DDP初始化和首批数据到达的提示，便于定位无进度的位置。已有进程不会热更新，需同步代码后重新启动。
+安装新增依赖：`python -m pip install 'tqdm>=4.66,<5'`。
+默认 `--progress auto`：交互终端显示训练/验证进度条，输出重定向（例如nohup）时显示普通日志。
+`--progress bar` 强制进度条，`--progress log --log-every 20` 每20批记录一行（首尾批也记录）。
+nohup日志不适合用tail显示原地刷新的进度条；要长期保留交互进度条可在tmux会话里运行。
+进度条显示batch数、百分比、耗时、ETA、batch/s、当前loss和累计avg；CUDA时显示peak_GiB。
+loss/avg是rank0的损失，peak_GiB是rank0本轮训练已分配张量显存峰值，均非多卡合计。
+一轮结束输出简短摘要；history.jsonl仍保存完整全局训练损失及验证指标，新增train_seconds、
+train_samples_per_second（双视角样本组/秒，含加载/通信）及rank0_train_peak_allocated_gib，便于比较吞吐。
+显存峰值不包含所有CUDA/NCCL开销，仍需同时观察nvidia-smi中的两张卡。
+启动时保留数据加载、模型搬入设备、DDP初始化及首批数据到达的提示。
+已有进程不会热更新，需同步代码后重新启动；若已在正式训练，优先等本轮保存后再重启并resume。
+
+48GB显存不要求必须增大batch。当前默认全局batch4遵循论文所报训练设置；
+增大batch属于额外实验，会改变每轮优化步数和梯度统计，不能保证相同精度，代码不自动缩放学习率。
+两卡全局batch4/8/16/32分别对应每卡2/4/8/16组双视角样本；显存按每卡独立计算。
+先逐档短测，比较吞吐和显存，再决定；不要按剩余显存比例直接推算batch。
+
+```bash
+CUDA_VISIBLE_DEVICES=1,2 NCCL_P2P_DISABLE=1 \
+torchrun --standalone --nproc-per-node=2 train.py \
+  --config configs/resnet50.json --device cuda \
+  --batch-size 16 --workers 0 --epochs 1 \
+  --limit-train 640 --max-train-batches 20 --limit-val 64 \
+  --progress bar --output runs/batch_probe_16
+```
+
+可分别把batch改为4/8/16/32，并对应更换输出目录。每次都从相同预训练骨干开始，
+不加载小样例检查点。短测不代表完整数据或长期训练的显存保证，应留出余量。
+用户当前服务器曾在默认P2P路径卡住，禁用P2P后两卡短测通过，命令保留该临时绕行设置；
+此设置只用于受影响环境，不应无条件推广到其他服务器。
+
+### 本地验证范围
 
 本地已用CPU/Gloo双进程检查：真实MDMT短训练、累积同步、验证、保存、恢复、
 多卡检查点单进程测试，以及不均匀可见目标数下的全局梯度一致性。

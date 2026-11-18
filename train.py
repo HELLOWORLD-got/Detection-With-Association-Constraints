@@ -6,7 +6,9 @@ import argparse
 from contextlib import nullcontext
 import json
 from pathlib import Path
+import sys
 import time
+from tqdm import tqdm
 import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
@@ -49,6 +51,7 @@ def run(args, config, device, rank, world_size):
         print(f"[rank {rank}] {message}", flush=True)
 
     t = config["training"]
+    show_bar = rank == 0 and (args.progress == "bar" or (args.progress == "auto" and sys.stdout.isatty()))
     local_batch = distributed.per_rank_batch_size(t["batch_size"], world_size)
     t["amp"] = t["amp"] and device.type == "cuda" and not args.no_amp
     seed_all(t["seed"] + rank, t["deterministic"])
@@ -115,7 +118,13 @@ def run(args, config, device, rank, world_size):
             validation="full validation set on rank 0 only",
         )
         (out / "distributed.json").write_text(json.dumps(topology, indent=2))
-        print(json.dumps(topology), flush=True)
+        print(
+            f"Training: {world_size} process(es), global batch={t['batch_size']}, "
+            f"per-rank batch={local_batch}, effective batch={topology['effective_batch']}, "
+            f"AMP={t['amp']}, workers/rank={t['workers']}. "
+            "Progress loss/avg/peak refer to rank 0; epoch loss is global.",
+            flush=True,
+        )
     for epoch in range(start, t["epochs"]):
         if isinstance(train.sampler, DistributedSampler):
             train.sampler.set_epoch(epoch)
@@ -125,58 +134,73 @@ def run(args, config, device, rank, world_size):
         optimizer.zero_grad(set_to_none=True)
         total, samples = 0.0, 0
         began = time.monotonic()
+        if device.type == "cuda":
+            torch.cuda.reset_peak_memory_stats(device)
         batches = min(len(train), args.max_train_batches) if args.max_train_batches else len(train)
         if rank == 0:
             print(f"Epoch {epoch+1}/{t['epochs']}: waiting for first training batch ...", flush=True)
-        for index, (images, targets) in enumerate(train):
-            if index >= batches:
-                break
-            if index == 0:
-                status("First training batch loaded; starting forward/backward ...")
-            group_start = (index // t["accumulation_steps"]) * t["accumulation_steps"]
-            group_size = min(t["accumulation_steps"], batches - group_start)
-            step_now = (index + 1) % t["accumulation_steps"] == 0 or index + 1 == batches
-            # no_sync must surround BOTH forward and backward.
-            sync_context = model.no_sync() if world_size > 1 and not step_now else nullcontext()
-            with sync_context:
-                with torch.autocast(device_type=device.type, enabled=t["amp"]):
-                    outputs = model([x.to(device) for x in images], return_logits=True)
-                loss = criterion(outputs_float(outputs), targets, sync_distributed=world_size > 1)[
-                    "loss"
-                ]
-                finite = torch.isfinite(loss).to(dtype=torch.int32)
-                if world_size > 1:
-                    dist.all_reduce(finite, op=dist.ReduceOp.MIN)
-                if not finite.item():
-                    raise RuntimeError("Non-finite loss on at least one rank")
-                scaler.scale(loss / group_size).backward()
-            if step_now:
-                scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(
-                    raw_model.parameters(), t["clip_grad_norm"], error_if_nonfinite=not t["amp"]
-                )
-                scaler.step(optimizer)
-                scaler.update()
-                optimizer.zero_grad(set_to_none=True)
-            total += loss.item() * len(targets)
-            samples += len(targets)
-            if rank == 0 and (index == 0 or (index + 1) % args.log_every == 0 or index + 1 == batches):
-                elapsed = time.monotonic() - began
-                eta = elapsed / (index + 1) * (batches - index - 1)
-                memory = (
-                    f" gpu_alloc={torch.cuda.memory_allocated(device)/1024**3:.2f}GiB"
-                    f" gpu_reserved={torch.cuda.memory_reserved(device)/1024**3:.2f}GiB"
-                    if device.type == "cuda" else ""
-                )
-                print(
-                    f"Epoch {epoch+1}/{t['epochs']} train {index+1}/{batches} "
-                    f"({100*(index+1)/batches:.1f}%) loss_rank0={loss.item():.5f} "
-                    f"avg_rank0={total/max(samples,1):.5f} "
-                    f"elapsed={elapsed:.1f}s ETA={eta:.1f}s{memory}", flush=True
-                )
+        with tqdm(
+            total=batches, desc=f"Train {epoch+1}/{t['epochs']}", unit="batch",
+            dynamic_ncols=True, mininterval=0.3, file=sys.stdout, disable=not show_bar,
+        ) as progress:
+            for index, (images, targets) in enumerate(train):
+                if index >= batches:
+                    break
+                if index == 0 and rank == 0:
+                    tqdm.write("First training batch loaded; starting forward/backward ...", file=sys.stdout)
+                group_start = (index // t["accumulation_steps"]) * t["accumulation_steps"]
+                group_size = min(t["accumulation_steps"], batches - group_start)
+                step_now = (index + 1) % t["accumulation_steps"] == 0 or index + 1 == batches
+                # no_sync must surround BOTH forward and backward.
+                sync_context = model.no_sync() if world_size > 1 and not step_now else nullcontext()
+                with sync_context:
+                    with torch.autocast(device_type=device.type, enabled=t["amp"]):
+                        outputs = model([x.to(device) for x in images], return_logits=True)
+                    loss = criterion(outputs_float(outputs), targets, sync_distributed=world_size > 1)[
+                        "loss"
+                    ]
+                    finite = torch.isfinite(loss).to(dtype=torch.int32)
+                    if world_size > 1:
+                        dist.all_reduce(finite, op=dist.ReduceOp.MIN)
+                    if not finite.item():
+                        raise RuntimeError("Non-finite loss on at least one rank")
+                    scaler.scale(loss / group_size).backward()
+                if step_now:
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(
+                        raw_model.parameters(), t["clip_grad_norm"], error_if_nonfinite=not t["amp"]
+                    )
+                    scaler.step(optimizer)
+                    scaler.update()
+                    optimizer.zero_grad(set_to_none=True)
+                total += loss.item() * len(targets)
+                samples += len(targets)
+                if show_bar:
+                    fields = dict(loss=f"{loss.item():.4f}", avg=f"{total/max(samples,1):.4f}")
+                    if device.type == "cuda":
+                        fields["peak_GiB"] = f"{torch.cuda.max_memory_allocated(device)/1024**3:.2f}"
+                    progress.set_postfix(fields, refresh=False)
+                    progress.update(1)
+                elif rank == 0 and (index == 0 or (index + 1) % args.log_every == 0 or index + 1 == batches):
+                    elapsed = time.monotonic() - began
+                    eta = elapsed / (index + 1) * (batches - index - 1)
+                    memory = (
+                        f" gpu_alloc={torch.cuda.memory_allocated(device)/1024**3:.2f}GiB"
+                        f" gpu_reserved={torch.cuda.memory_reserved(device)/1024**3:.2f}GiB"
+                        f" gpu_peak={torch.cuda.max_memory_allocated(device)/1024**3:.2f}GiB"
+                        if device.type == "cuda" else ""
+                    )
+                    print(
+                        f"Epoch {epoch+1}/{t['epochs']} train {index+1}/{batches} "
+                        f"({100*(index+1)/batches:.1f}%) loss_rank0={loss.item():.5f} "
+                        f"avg_rank0={total/max(samples,1):.5f} "
+                        f"elapsed={elapsed:.1f}s ETA={eta:.1f}s{memory}", flush=True
+                    )
         totals = torch.tensor([total, samples], device=device, dtype=torch.float64)
         if world_size > 1:
             dist.all_reduce(totals)
+        train_seconds = time.monotonic() - began
+        train_peak = torch.cuda.max_memory_allocated(device) / 1024**3 if device.type == "cuda" else None
         result, improved = None, False
         if rank == 0:
             # Never call the DDP wrapper here: other ranks wait, not validate.
@@ -184,7 +208,9 @@ def run(args, config, device, rank, world_size):
             print(f"Epoch {epoch+1}: validation on rank 0 ({len(val)} batches) ...", flush=True)
 
             def validation_progress(done, total_batches):
-                if done == 1 or done % args.log_every == 0 or done == total_batches:
+                if show_bar:
+                    val_progress.update(done - val_progress.n)
+                elif done == 1 or done % args.log_every == 0 or done == total_batches:
                     elapsed = time.monotonic() - val_began
                     eta = elapsed / done * (total_batches - done)
                     print(
@@ -193,9 +219,13 @@ def run(args, config, device, rank, world_size):
                         flush=True,
                     )
 
-            result = evaluate_model(
-                raw_model, val, criterion, config, device, progress_callback=validation_progress
-            )
+            with tqdm(
+                total=len(val), desc=f"Val   {epoch+1}/{t['epochs']}", unit="batch",
+                dynamic_ncols=True, mininterval=0.3, file=sys.stdout, disable=not show_bar,
+            ) as val_progress:
+                result = evaluate_model(
+                    raw_model, val, criterion, config, device, progress_callback=validation_progress
+                )
             selected = result[config["evaluation"]["selection_metric"]]
             improved = selected > best
             if improved:
@@ -212,6 +242,9 @@ def run(args, config, device, rank, world_size):
                 epoch=epoch + 1,
                 train_loss=(totals[0] / totals[1].clamp_min(1)).item(),
                 train_samples=int(totals[1].item()),
+                train_seconds=train_seconds,
+                train_samples_per_second=int(totals[1].item()) / max(train_seconds, 1e-9),
+                rank0_train_peak_allocated_gib=train_peak,
                 validation=result,
                 elapsed_seconds=time.monotonic() - began,
                 best=best,
@@ -241,7 +274,15 @@ def run(args, config, device, rank, world_size):
                     rng_states,
                     world_size,
                 )
-            print(json.dumps(record), flush=True)
+            print(
+                f"Epoch {epoch+1}/{t['epochs']} done | train_loss={record['train_loss']:.5f} "
+                f"val_loss={result['losses']['loss']:.5f} | MDA={result['MDA']:.4f} "
+                f"mAP={result['mAP']:.4f} | best={best:.4f} "
+                f"train={record['train_samples_per_second']:.2f} pairs/s "
+                f"time={record['elapsed_seconds']:.1f}s | saved last.pt"
+                + (", best.pt" if improved else ""),
+                flush=True,
+            )
         if world_size > 1:
             dist.barrier()
     if rank == 0 and start >= t["epochs"]:
@@ -267,7 +308,9 @@ def main():
     parser.add_argument("--limit-val", type=int)
     parser.add_argument("--max-train-batches", type=int, help="Maximum batches PER rank")
     parser.add_argument("--no-amp", action="store_true")
-    parser.add_argument("--log-every", type=int, default=1, help="Print progress every N batches (rank 0 only)")
+    parser.add_argument("--log-every", type=int, default=20, help="Plain log interval in batches (rank 0 only)")
+    parser.add_argument("--progress", choices=("auto", "bar", "log"), default="auto",
+                        help="auto: bar in terminal, plain logs when redirected; bar: force bar; log: plain logs")
     args = parser.parse_args()
     config = load_config(args.config)
     for name in ("epochs", "batch_size", "accumulation_steps", "workers"):
