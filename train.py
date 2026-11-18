@@ -45,10 +45,14 @@ def save_checkpoint(path, model, optimizer, scaler, epoch, best, config, rng_sta
 
 
 def run(args, config, device, rank, world_size):
+    def status(message):
+        print(f"[rank {rank}] {message}", flush=True)
+
     t = config["training"]
     local_batch = distributed.per_rank_batch_size(t["batch_size"], world_size)
     t["amp"] = t["amp"] and device.type == "cuda" and not args.no_amp
     seed_all(t["seed"] + rank, t["deterministic"])
+    status(f"Device={device}; loading training data ...")
     train = make_loader(
         config,
         "train",
@@ -61,12 +65,14 @@ def run(args, config, device, rank, world_size):
     )
     # Validation stays unsharded on rank 0: no repeated/padded GT and no AP averaging.
     val = make_loader(config, "val", args.limit_val) if rank == 0 else None
+    status(f"Training data ready ({len(train.dataset)} samples); building model ...")
     resume = torch.load(args.resume, map_location="cpu", weights_only=True) if args.resume else None
     if resume and resume["config"]["model"] != config["model"]:
         raise ValueError("Resume model configuration differs from checkpoint")
     raw_model = build_model(config, pretrained=False if resume else None).to(device)
     if resume:
         raw_model.load_state_dict(resume["model"])
+    status("Model on device; initializing DDP ..." if world_size > 1 else "Model on device.")
     model = (
         DistributedDataParallel(
             raw_model, device_ids=[device.index] if device.type == "cuda" else None
@@ -75,6 +81,7 @@ def run(args, config, device, rank, world_size):
         else raw_model
     )
     criterion = criterion_from(config)
+    status("Model ready; DDP synchronization completed." if world_size > 1 else "Model ready.")
     optimizer = torch.optim.AdamW(
         raw_model.parameters(), lr=t["lr"], weight_decay=t["weight_decay"]
     )
@@ -119,9 +126,13 @@ def run(args, config, device, rank, world_size):
         total, samples = 0.0, 0
         began = time.monotonic()
         batches = min(len(train), args.max_train_batches) if args.max_train_batches else len(train)
+        if rank == 0:
+            print(f"Epoch {epoch+1}/{t['epochs']}: waiting for first training batch ...", flush=True)
         for index, (images, targets) in enumerate(train):
             if index >= batches:
                 break
+            if index == 0:
+                status("First training batch loaded; starting forward/backward ...")
             group_start = (index // t["accumulation_steps"]) * t["accumulation_steps"]
             group_size = min(t["accumulation_steps"], batches - group_start)
             step_now = (index + 1) % t["accumulation_steps"] == 0 or index + 1 == batches
@@ -149,9 +160,19 @@ def run(args, config, device, rank, world_size):
                 optimizer.zero_grad(set_to_none=True)
             total += loss.item() * len(targets)
             samples += len(targets)
-            if rank == 0 and index % 100 == 0:
+            if rank == 0 and (index == 0 or (index + 1) % args.log_every == 0 or index + 1 == batches):
+                elapsed = time.monotonic() - began
+                eta = elapsed / (index + 1) * (batches - index - 1)
+                memory = (
+                    f" gpu_alloc={torch.cuda.memory_allocated(device)/1024**3:.2f}GiB"
+                    f" gpu_reserved={torch.cuda.memory_reserved(device)/1024**3:.2f}GiB"
+                    if device.type == "cuda" else ""
+                )
                 print(
-                    f"epoch={epoch+1} batch={index+1}/{batches} loss={loss.item():.5f}", flush=True
+                    f"Epoch {epoch+1}/{t['epochs']} train {index+1}/{batches} "
+                    f"({100*(index+1)/batches:.1f}%) loss_rank0={loss.item():.5f} "
+                    f"avg_rank0={total/max(samples,1):.5f} "
+                    f"elapsed={elapsed:.1f}s ETA={eta:.1f}s{memory}", flush=True
                 )
         totals = torch.tensor([total, samples], device=device, dtype=torch.float64)
         if world_size > 1:
@@ -159,7 +180,22 @@ def run(args, config, device, rank, world_size):
         result, improved = None, False
         if rank == 0:
             # Never call the DDP wrapper here: other ranks wait, not validate.
-            result = evaluate_model(raw_model, val, criterion, config, device)
+            val_began = time.monotonic()
+            print(f"Epoch {epoch+1}: validation on rank 0 ({len(val)} batches) ...", flush=True)
+
+            def validation_progress(done, total_batches):
+                if done == 1 or done % args.log_every == 0 or done == total_batches:
+                    elapsed = time.monotonic() - val_began
+                    eta = elapsed / done * (total_batches - done)
+                    print(
+                        f"Epoch {epoch+1} val {done}/{total_batches} "
+                        f"({100*done/total_batches:.1f}%) elapsed={elapsed:.1f}s ETA={eta:.1f}s",
+                        flush=True,
+                    )
+
+            result = evaluate_model(
+                raw_model, val, criterion, config, device, progress_callback=validation_progress
+            )
             selected = result[config["evaluation"]["selection_metric"]]
             improved = selected > best
             if improved:
@@ -171,6 +207,7 @@ def run(args, config, device, rank, world_size):
         # Gather after validation so each rank's next-epoch RNG can be restored.
         rng_states = distributed.gather_rng(device, world_size)
         if rank == 0:
+            print(f"Epoch {epoch+1}: saving checkpoints ...", flush=True)
             record = dict(
                 epoch=epoch + 1,
                 train_loss=(totals[0] / totals[1].clamp_min(1)).item(),
@@ -230,6 +267,7 @@ def main():
     parser.add_argument("--limit-val", type=int)
     parser.add_argument("--max-train-batches", type=int, help="Maximum batches PER rank")
     parser.add_argument("--no-amp", action="store_true")
+    parser.add_argument("--log-every", type=int, default=1, help="Print progress every N batches (rank 0 only)")
     args = parser.parse_args()
     config = load_config(args.config)
     for name in ("epochs", "batch_size", "accumulation_steps", "workers"):
@@ -238,10 +276,11 @@ def main():
     for name in ("epochs", "batch_size", "accumulation_steps"):
         if config["training"][name] < 1:
             parser.error(f"{name} must be positive")
-    for name in ("limit_train", "limit_val", "max_train_batches"):
+    for name in ("limit_train", "limit_val", "max_train_batches", "log_every"):
         if getattr(args, name) is not None and getattr(args, name) < 1:
             parser.error(f'--{name.replace("_","-")} must be positive')
     try:
+        print("Initializing device/process group ...", flush=True)
         device, rank, world_size = distributed.setup(args.device)
         run(args, config, device, rank, world_size)
     finally:

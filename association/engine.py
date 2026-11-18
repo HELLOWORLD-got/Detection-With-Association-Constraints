@@ -115,7 +115,8 @@ def make_loader(
 
 @torch.no_grad()
 def evaluate_model(
-    model, loader, criterion, config, device, limit_batches=None, predictions_path=None
+    model, loader, criterion, config, device, limit_batches=None, predictions_path=None,
+    progress_callback=None,
 ):
     model.eval()
     association = AssociationMetrics(**config["evaluation"]["association"])
@@ -145,6 +146,9 @@ def evaluate_model(
                         for q in pred["present"][v].nonzero().flatten().tolist()
                     ]
         count += len(targets)
+        if progress_callback is not None:
+            total_batches = min(len(loader), limit_batches) if limit_batches is not None else len(loader)
+            progress_callback(batch_index + 1, total_batches)
     if not count:
         raise ValueError("No evaluation samples")
     result = association.compute()
