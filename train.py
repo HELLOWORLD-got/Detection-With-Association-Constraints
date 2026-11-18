@@ -65,6 +65,7 @@ def run(args, config, device, rank, world_size):
         world_size=world_size,
         rank=rank,
         batch_size=local_batch,
+        max_batches=args.max_train_batches,
     )
     # Validation stays unsharded on rank 0: no repeated/padded GT and no AP averaging.
     val = make_loader(config, "val", args.limit_val) if rank == 0 else None
@@ -113,7 +114,7 @@ def run(args, config, device, rank, world_size):
             workers_per_rank=t["workers"],
             training_samples=len(train.dataset),
             padded_training_samples_per_epoch=(
-                (len(train.sampler) * world_size - len(train.dataset)) if world_size > 1 else 0
+                (len(train.batch_sampler.sampler) * world_size - len(train.dataset)) if world_size > 1 else 0
             ),
             validation="full validation set on rank 0 only",
         )
@@ -126,8 +127,8 @@ def run(args, config, device, rank, world_size):
             flush=True,
         )
     for epoch in range(start, t["epochs"]):
-        if isinstance(train.sampler, DistributedSampler):
-            train.sampler.set_epoch(epoch)
+        if isinstance(train.batch_sampler.sampler, DistributedSampler):
+            train.batch_sampler.sampler.set_epoch(epoch)
         model.train()
         if t["freeze_bn_stats"]:
             freeze_bn_stats(raw_model)
@@ -136,7 +137,7 @@ def run(args, config, device, rank, world_size):
         began = time.monotonic()
         if device.type == "cuda":
             torch.cuda.reset_peak_memory_stats(device)
-        batches = min(len(train), args.max_train_batches) if args.max_train_batches else len(train)
+        batches = len(train)
         if rank == 0:
             print(f"Epoch {epoch+1}/{t['epochs']}: waiting for first training batch ...", flush=True)
         with tqdm(
@@ -144,8 +145,6 @@ def run(args, config, device, rank, world_size):
             dynamic_ncols=True, mininterval=0.3, file=sys.stdout, disable=not show_bar,
         ) as progress:
             for index, (images, targets) in enumerate(train):
-                if index >= batches:
-                    break
                 if index == 0 and rank == 0:
                     tqdm.write("First training batch loaded; starting forward/backward ...", file=sys.stdout)
                 group_start = (index // t["accumulation_steps"]) * t["accumulation_steps"]

@@ -1,4 +1,5 @@
 import json
+from itertools import islice
 from pathlib import Path
 import random
 import torch
@@ -6,7 +7,7 @@ from torch import nn
 from .models import InstanceBasedAssociation, get_resnet_backbone, get_vit_backbone
 from .losses import HungarianLoss
 from .data import MultiViewDataset, collate
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, BatchSampler, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
 from .metrics import AssociationMetrics, DetectionMetrics, decode, xyxy
 
@@ -72,8 +73,25 @@ def outputs_float(outputs):
     return outputs[0].float(), [b.float() for b in outputs[1]], [s.float() for s in outputs[2]]
 
 
+class LimitedBatchSampler(BatchSampler):
+    """End the index stream normally, without abandoning prefetched worker output."""
+
+    def __init__(self, sampler, batch_size, max_batches):
+        super().__init__(sampler, batch_size, drop_last=False)
+        if max_batches < 1:
+            raise ValueError("max_batches must be positive")
+        self.max_batches = max_batches
+
+    def __iter__(self):
+        return islice(super().__iter__(), self.max_batches)
+
+    def __len__(self):
+        return min(super().__len__(), self.max_batches)
+
+
 def make_loader(
-    config, split, limit=None, shuffle=False, augment=False, world_size=1, rank=0, batch_size=None
+    config, split, limit=None, shuffle=False, augment=False, world_size=1, rank=0, batch_size=None,
+    max_batches=None,
 ):
     d, m, t = config["data"], config["model"], config["training"]
     dataset = MultiViewDataset(
@@ -97,11 +115,17 @@ def make_loader(
         if world_size > 1
         else None
     )
+    size = batch_size if batch_size is not None else t["batch_size"]
+    if max_batches is not None:
+        index_sampler = sampler if sampler is not None else (
+            RandomSampler(dataset) if shuffle else SequentialSampler(dataset)
+        )
+        batching = dict(batch_sampler=LimitedBatchSampler(index_sampler, size, max_batches))
+    else:
+        batching = dict(batch_size=size, sampler=sampler, shuffle=shuffle and sampler is None)
     return DataLoader(
         dataset,
-        batch_size=batch_size if batch_size is not None else t["batch_size"],
-        sampler=sampler,
-        shuffle=shuffle and sampler is None,
+        **batching,
         num_workers=t["workers"],
         # NCCL (and some Gloo transports) are not fork-safe. Use fresh
         # workers for both training and rank-0 validation under DDP.

@@ -3,10 +3,18 @@ from pathlib import Path
 import tempfile
 import unittest
 from association.distributed import per_rank_batch_size
-from association.engine import make_loader
+from association.engine import make_loader, LimitedBatchSampler
+from torch.utils.data import SequentialSampler
 
 
 class DistributedInputTests(unittest.TestCase):
+    def test_batch_limit_ends_index_stream_and_preserves_partial_tail(self):
+        sampler = SequentialSampler(range(9))
+        limited = LimitedBatchSampler(sampler, batch_size=2, max_batches=2)
+        self.assertEqual(len(limited), 2)
+        self.assertEqual(list(limited), [[0, 1], [2, 3]])
+        self.assertEqual(list(LimitedBatchSampler(sampler, 2, 20))[-1], [8])
+
     def test_global_batch_preserved_and_invalid_topology_rejected(self):
         self.assertEqual(per_rank_batch_size(4, 2), 2)
         self.assertEqual(per_rank_batch_size(4, 4), 1)
@@ -34,3 +42,9 @@ class DistributedInputTests(unittest.TestCase):
             for loader in loaders:
                 loader.sampler.set_epoch(1)
             self.assertNotEqual(shards, [list(loader.sampler) for loader in loaders])
+            limited = make_loader(config, "train", shuffle=True, world_size=2,
+                                  rank=0, batch_size=2, max_batches=1)
+            self.assertEqual(len(limited), 1)
+            sampler = limited.batch_sampler.sampler
+            sampler.set_epoch(1)
+            self.assertEqual(list(limited.batch_sampler), [list(loaders[0].sampler)[:2]])

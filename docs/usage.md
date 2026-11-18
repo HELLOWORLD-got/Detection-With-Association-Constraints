@@ -224,6 +224,8 @@ python tools/score_official_mda.py --predictions runs/mdmt_resnet_ddp/test_predi
 默认学习率仍为1e-4，不按卡数自动放大。`--workers` 是每进程的加载进程数，
 例如4卡×workers2共8个加载进程。DDP加载进程显式使用spawn，避免NCCL与fork混用。`--limit-train` 限制分片前的全局数据集，
 `--max-train-batches` 则限制每个进程的batch数。
+短测的batch限制在BatchSampler中截断索引流，让多进程DataLoader正常耗尽；
+不再通过训练循环提前break，避免仍有预取数据时直接析构worker。
 DistributedSampler按rank分片，每轮set_epoch重新洗牌；样本总数不能整除卡数时，
 使用其标准尾部补齐（可能重复少量样本），数量记录于 `distributed.json`，不会静默丢弃标注。
 
