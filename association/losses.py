@@ -60,7 +60,31 @@ class HungarianLoss(nn.Module):
                 valid = visible[k].nonzero().flatten()
                 if len(valid):
                     cost[:, valid] += lb * self.box_cost(boxes[b, k].detach(), gt[k, valid])
-            row, col = linear_sum_assignment(cost.detach().cpu().numpy())
+            try:
+                row, col = linear_sum_assignment(cost.detach().cpu().numpy())
+            except ValueError as error:
+                if torch.isfinite(cost).all():
+                    raise
+                # Only synchronize these tensors on failure. Keep the original
+                # non-finite values so we can locate the source of the failure.
+                sources = {
+                    "pred_logits" if use_logits else "pred_probs": (
+                        outputs["pred_logits"][b] if use_logits else probs[b]
+                    ),
+                    "log_probs": log_probs[b],
+                    "pred_boxes": boxes[b],
+                    "pred_visibility": scores[b],
+                    "visible_gt_boxes": gt[visible],
+                }
+                invalid = [
+                    name for name, tensor in sources.items() if not torch.isfinite(tensor).all()
+                ]
+                detail = ", ".join(invalid) if invalid else "finite inputs; inspect matching box cost"
+                raise FloatingPointError(
+                    f"Non-finite Hungarian cost for batch item {b}, "
+                    f"sequence={target.get('sequence')}, frame={target.get('frame')}. "
+                    f"Sources: {detail}. SciPy: {error}"
+                ) from error
             row = torch.as_tensor(row, device=boxes.device)
             col = torch.as_tensor(col, device=boxes.device)
             cls_losses.append(F.nll_loss(log_probs[b, row], padded[col]))

@@ -155,6 +155,21 @@ class DataTests(unittest.TestCase):
         self.assertTrue(torch.isfinite(loss))
         self.assertTrue(torch.isfinite(out["pred_logits"].grad).all())
 
+    def test_nonfinite_matching_reports_sample_and_tensor(self):
+        boxes = torch.full((1, 2, 2, 4), 0.2)
+        boxes[0, 0, 0, 0] = float("nan")
+        outputs = dict(
+            pred_logits=torch.zeros(1, 2, 2),
+            pred_boxes=boxes,
+            pred_visibility_logits=torch.zeros(1, 2, 2),
+        )
+        target = dict(
+            labels=torch.tensor([0]), boxes=torch.full((2, 1, 4), 0.2),
+            visible=torch.ones(2, 1, dtype=torch.bool), sequence="23", frame=334,
+        )
+        with self.assertRaisesRegex(FloatingPointError, "sequence=23, frame=334.*pred_boxes"):
+            HungarianLoss()(outputs, [target])
+
 
 if __name__ == "__main__":
     unittest.main()

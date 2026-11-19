@@ -93,10 +93,11 @@ def run(args, config, device, rank, world_size):
     start, best = 0, -float("inf")
     if resume:
         optimizer.load_state_dict(resume["optimizer"])
-        if resume.get("scaler"):
-            scaler.load_state_dict(resume["scaler"])
-        elif t["amp"] and rank == 0:
-            print("Checkpoint has no AMP state; initializing a fresh GradScaler.", flush=True)
+        if t["amp"]:
+            if resume.get("scaler"):
+                scaler.load_state_dict(resume["scaler"])
+            elif rank == 0:
+                print("Checkpoint has no AMP state; initializing a fresh GradScaler.", flush=True)
         start, best = resume["epoch"], resume["best"]
         distributed.restore_rng(resume, device, rank, world_size)
     out = Path(args.output)
@@ -155,9 +156,15 @@ def run(args, config, device, rank, world_size):
                 with sync_context:
                     with torch.autocast(device_type=device.type, enabled=t["amp"]):
                         outputs = model([x.to(device) for x in images], return_logits=True)
-                    loss = criterion(outputs_float(outputs), targets, sync_distributed=world_size > 1)[
-                        "loss"
-                    ]
+                    try:
+                        loss = criterion(
+                            outputs_float(outputs), targets, sync_distributed=world_size > 1
+                        )["loss"]
+                    except FloatingPointError as error:
+                        raise FloatingPointError(
+                            f"rank={rank}, epoch={epoch+1}, batch={index+1}/{batches}, "
+                            f"amp={t['amp']}: {error}"
+                        ) from error
                     finite = torch.isfinite(loss).to(dtype=torch.int32)
                     if world_size > 1:
                         dist.all_reduce(finite, op=dist.ReduceOp.MIN)
